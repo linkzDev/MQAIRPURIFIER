@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Air Purifier IoT Station</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- MQTT.js library -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- Feather Icons -->
+  <script src="https://unpkg.com/feather-icons"></script>
+  <style>
+    body { background-color: #ebf0f4; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .tab-view { display: none; }
+    .tab-view.active { display: block; }
+  </style>
+</head>
+<body class="text-slate-800 p-3 md:p-6 min-h-screen">
+
+  <div class="max-w-[1450px] mx-auto flex gap-4">
+
+    <!-- FLOATING SIDEBAR NAVIGATION -->
+    <aside class="hidden md:flex flex-col items-center justify-between bg-white/80 backdrop-blur rounded-3xl p-3 shadow-sm border border-slate-200/80 w-16 min-h-[92vh]">
+      <div class="flex flex-col items-center gap-4">
+        <div class="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-md shadow-emerald-200">
+          <i data-feather="wind" class="w-5 h-5"></i>
+        </div>
+        
+        <button onclick="setTab('dashboard')" id="nav-dashboard" class="nav-btn p-3 bg-slate-900 text-white rounded-2xl shadow transition" title="Dashboard Monitoring">
+          <i data-feather="home" class="w-5 h-5"></i>
+        </button>
+
+        <button onclick="setTab('logs')" id="nav-logs" class="nav-btn p-3 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-2xl transition" title="Riwayat Telemetri">
+          <i data-feather="activity" class="w-5 h-5"></i>
+        </button>
+
+        <button onclick="setTab('settings')" id="nav-settings" class="nav-btn p-3 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-2xl transition" title="Pengaturan Broker & Kalibrasi">
+          <i data-feather="sliders" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="flex flex-col items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs">
+          ESP
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN INTERFACE -->
+    <main class="flex-1 flex flex-col gap-5">
+
+      <!-- TOP HEADER BAR -->
+      <header class="flex flex-wrap items-center justify-between gap-3 bg-white/70 backdrop-blur px-6 py-4 rounded-3xl border border-slate-200/80 shadow-sm">
+        <div class="flex items-center gap-3">
+          <div class="md:hidden p-2 rounded-xl bg-emerald-500 text-white">
+            <i data-feather="wind" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-slate-800" id="headerTitle">Air Purifier Monitoring</h1>
+            <p class="text-xs text-slate-400">Public HiveMQ IoT Mesh</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- Status Koneksi MQTT -->
+          <div id="connBadge" class="flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-200 shadow-sm cursor-pointer" onclick="setTab('settings')">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+            <span id="connText">Disconnected</span>
+          </div>
+
+          <!-- Label Node Aktif -->
+          <div class="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-2xl border border-slate-200 text-xs font-medium">
+            <span class="text-slate-400">Node:</span>
+            <span id="activeDeviceLabel" class="font-bold text-slate-700">purifier-01</span>
+          </div>
+
+          <button onclick="setTab('settings')" class="md:hidden p-2.5 bg-slate-900 text-white rounded-2xl">
+            <i data-feather="settings" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: DASHBOARD MONITORING -->
+      <section id="tab-dashboard" class="tab-view active">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+          <!-- KOLOM METRIK UTAMA (8 COLS) -->
+          <div class="lg:col-span-8 flex flex-col gap-5">
+
+            <!-- ROW HIGHLIGHT: CUACA & KUALITAS UDARA -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              <!-- Kondisi Ruangan (DHT22) -->
+              <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between text-xs text-slate-400 font-medium">
+                  <span class="flex items-center gap-1.5"><i data-feather="map-pin" class="w-3.5 h-3.5"></i> Sensor DHT22</span>
+                  <span id="liveClock">--:-- WIB</span>
+                </div>
+                <div class="my-4">
+                  <div class="text-4xl font-extrabold text-slate-800 tracking-tight" id="dispTempBig">--°C</div>
+                  <div class="flex items-center gap-2 text-slate-400 text-sm mt-1" id="climateStatusBox">
+                    <i data-feather="cloud-off" class="w-4 h-4"></i>
+                    <span id="climateStatus">Menunggu data alat...</span>
+                  </div>
+                </div>
+                <div class="text-xs text-slate-400 flex justify-between border-t border-slate-100 pt-3">
+                  <span>Kelembapan Udara (RH)</span>
+                  <span class="font-bold text-slate-500" id="dispHumSub">--%</span>
+                </div>
+              </div>
+
+              <!-- Status Kualitas Udara (MQ-135) -->
+              <div id="aqiCard" class="bg-slate-700 text-white rounded-3xl p-6 shadow-sm flex flex-col justify-between transition-colors">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs uppercase tracking-wider font-semibold opacity-90 flex items-center gap-1.5">
+                    <i data-feather="activity" class="w-3.5 h-3.5"></i> Air Quality Index
+                  </span>
+                  <span id="dispAqiTag" class="text-xs font-bold px-2 py-0.5 rounded-full bg-white/20 uppercase">Standby</span>
+                </div>
+                <div class="my-3">
+                  <div class="text-5xl font-black tracking-tight" id="dispAqiVal">--</div>
+                  <p class="text-xs opacity-85 mt-2 leading-relaxed" id="dispAqiAdvice">Menunggu telemetri dari modul ESP32.</p>
+                </div>
+                <div class="w-full bg-black/20 h-2 rounded-full overflow-hidden">
+                  <div id="aqiProgress" class="bg-white h-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- GRID KARTU METRIK RINGKAS -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
+                <div class="text-slate-400 mb-3"><i data-feather="thermometer" class="w-4 h-4"></i></div>
+                <span class="text-xs text-slate-400 font-medium">Suhu</span>
+                <div class="text-2xl font-bold text-slate-800" id="dispTemp">-- °C</div>
+              </div>
+
+              <div class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
+                <div class="text-slate-400 mb-3"><i data-feather="droplet" class="w-4 h-4"></i></div>
+                <span class="text-xs text-slate-400 font-medium">Kelembapan</span>
+                <div class="text-2xl font-bold text-slate-800" id="dispHum">-- %</div>
+              </div>
+
+              <div class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
+                <div class="text-slate-400 mb-3"><i data-feather="wind" class="w-4 h-4"></i></div>
+                <span class="text-xs text-slate-400 font-medium">MQ-135 ADC</span>
+                <div class="text-2xl font-bold text-slate-800" id="dispRaw">--</div>
+              </div>
+
+              <div class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
+                <div class="text-slate-400 mb-3"><i data-feather="cpu" class="w-4 h-4"></i></div>
+                <span class="text-xs text-slate-400 font-medium">Mode Kerja</span>
+                <div class="text-xl font-bold text-slate-500 uppercase" id="dispMode">--</div>
+              </div>
+            </div>
+
+            <!-- RELAY KIPAS EXHAUST 12V -->
+            <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-4">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-700">
+                  <i data-feather="disc" class="w-6 h-6" id="fanSpinIcon"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-800">Relay Kipas 12V</h4>
+                  <p class="text-xs text-slate-400" id="fanStatusSub">Status: Menunggu Data</p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-3">
+                <button onclick="toggleModeOperation()" class="px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold hover:bg-slate-50 transition" id="btnToggleMode">
+                  Ubah Mode
+                </button>
+                <button onclick="toggleFanRelay()" class="px-5 py-2.5 rounded-2xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition shadow-sm" id="btnFanSwitch">
+                  Nyalakan Kipas
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- KOLOM DAFTAR NODE ALAT (4 COLS) -->
+          <div class="lg:col-span-4 flex flex-col gap-5">
+            <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex-1">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-slate-800">Daftar Node Alat</h3>
+                <span class="text-[11px] font-semibold text-emerald-600 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100">Multi-Device</span>
+              </div>
+              <p class="text-xs text-slate-400 mb-4">Pilih node untuk monitoring topik atau tambahkan node baru.</p>
+
+              <div class="space-y-3" id="deviceListContainer"></div>
+
+              <div class="mt-6 pt-5 border-t border-slate-100 space-y-3">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">Tambah Node Baru</h4>
+                <div>
+                  <label class="text-[11px] text-slate-400 block mb-1">Nama Alat / Lokasi:</label>
+                  <input type="text" id="newDeviceName" placeholder="misal: Kamar Tidur" class="w-full text-xs px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                  <label class="text-[11px] text-slate-400 block mb-1">Device ID Unik:</label>
+                  <input type="text" id="newDeviceId" placeholder="misal: purifier-02" class="w-full text-xs px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-emerald-500">
+                  <span class="text-[10px] text-slate-400">Topik: <code>smart-purifier/[Device_ID]/status</code></span>
+                </div>
+                <button onclick="handleAddNewDevice()" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-sm">
+                  Daftarkan Node & Subscribe
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- TAB 2: LOG TELEMETRI -->
+      <section id="tab-logs" class="tab-view">
+        <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="font-bold text-slate-800 text-lg">Riwayat Paket Masuk</h3>
+              <p class="text-xs text-slate-400">Payload telemetri real-time yang diterima dari HiveMQ Public</p>
+            </div>
+            <button onclick="clearLogs()" class="px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600">
+              Bersihkan Log
+            </button>
+          </div>
+          <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="border-b border-slate-100 text-slate-400">
+                  <th class="py-3 px-2">Waktu</th>
+                  <th class="py-3 px-2">Topik MQTT</th>
+                  <th class="py-3 px-2">Suhu</th>
+                  <th class="py-3 px-2">Kelembapan</th>
+                  <th class="py-3 px-2">MQ-135</th>
+                  <th class="py-3 px-2">Kipas</th>
+                  <th class="py-3 px-2">Mode</th>
+                </tr>
+              </thead>
+              <tbody id="logTableBody" class="divide-y divide-slate-100 text-slate-700">
+                <tr><td colspan="7" class="py-6 text-center text-slate-400">Belum ada paket data telemetri yang diterima.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: PENGATURAN & KALIBRASI -->
+      <section id="tab-settings" class="tab-view">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+          <!-- KONEKSI BROKER -->
+          <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+              <i data-feather="cloud" class="w-4 h-4 text-emerald-600"></i> Broker MQTT (Public)
+            </h3>
+            <div>
+              <label class="text-xs font-semibold text-slate-600 block mb-1">Host Broker:</label>
+              <input type="text" id="cfgHost" value="broker.hivemq.com" class="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1">Port WebSocket (WSS):</label>
+                <input type="number" id="cfgPort" value="8884" class="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 outline-none">
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1">Autentikasi:</label>
+                <input type="text" disabled value="None (Publik)" class="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 outline-none">
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400">Menggunakan broker publik HiveMQ tanpa kredensial akun.</p>
+            <button onclick="saveAndReconnectMqtt()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition shadow-sm">
+              Terapkan & Sambungkan Ulang
+            </button>
+          </div>
+
+          <!-- KALIBRASI SENSOR -->
+          <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+              <i data-feather="sliders" class="w-4 h-4 text-emerald-600"></i> Kalibrasi Ambang Batas Sensor
+            </h3>
+            <div>
+              <label class="text-xs font-semibold text-slate-600 block mb-1">Sensor Offset (Zero Shift):</label>
+              <input type="number" id="inputOffset" value="0" class="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 outline-none">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1">Batas Sedang (LED Kuning):</label>
+                <input type="number" id="inputThMod" value="600" class="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 outline-none">
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1">Batas Buruk (LED Merah / Kipas Auto):</label>
+                <input type="number" id="inputThBad" value="1200" class="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 outline-none">
+              </div>
+            </div>
+            <button onclick="sendCalibrationPayload()" class="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-sm mt-3">
+              Kirim Kalibrasi ke ESP32
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    feather.replace();
+
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('liveClock').innerText = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+    }, 1000);
+
+    // KREDENSIAL BROKER PUBLIK HIVEMQ
+    let mqttHost = localStorage.getItem('mqtt_host') || 'broker.hivemq.com';
+    let mqttPort = localStorage.getItem('mqtt_port') || '8884';
+
+    let savedDevices = localStorage.getItem('purifier_device_list');
+    let devices = savedDevices ? JSON.parse(savedDevices) : [
+      { id: 'purifier-01', name: 'Node Utama' }
+    ];
+
+    let activeDeviceId = localStorage.getItem('purifier_active_device') || devices[0].id;
+    let client = null;
+    let autoMode = true;
+    let fanActive = false;
+
+    document.getElementById('cfgHost').value = mqttHost;
+    document.getElementById('cfgPort').value = mqttPort;
+
+    function setTab(tabKey) {
+      document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.remove('bg-slate-900', 'text-white', 'shadow');
+        b.classList.add('text-slate-400');
+      });
+
+      document.getElementById('tab-' + tabKey).classList.add('active');
+      const activeBtn = document.getElementById('nav-' + tabKey);
+      if (activeBtn) {
+        activeBtn.classList.remove('text-slate-400');
+        activeBtn.classList.add('bg-slate-900', 'text-white', 'shadow');
+      }
+
+      const titles = {
+        'dashboard': 'Air Purifier Monitoring',
+        'logs': 'Riwayat Telemetri Data',
+        'settings': 'Pengaturan Broker & Kalibrasi'
+      };
+      document.getElementById('headerTitle').innerText = titles[tabKey];
+    }
+
+    function resetDashboardUI() {
+      document.getElementById('dispTemp').innerText = '-- °C';
+      document.getElementById('dispTempBig').innerText = '--°C';
+      document.getElementById('dispHum').innerText = '-- %';
+      document.getElementById('dispHumSub').innerText = '--%';
+      document.getElementById('dispRaw').innerText = '--';
+      document.getElementById('dispMode').innerText = '--';
+      document.getElementById('dispAqiVal').innerText = '--';
+      document.getElementById('dispAqiTag').innerText = 'STANDBY';
+      document.getElementById('dispAqiAdvice').innerText = 'Menunggu telemetri dari modul ESP32.';
+      document.getElementById('aqiProgress').style.width = '0%';
+      document.getElementById('climateStatus').innerText = 'Menunggu data alat...';
+      
+      const aqiCard = document.getElementById('aqiCard');
+      aqiCard.className = "bg-slate-700 text-white rounded-3xl p-6 shadow-sm flex flex-col justify-between transition-colors";
+
+      const spin = document.getElementById('fanSpinIcon');
+      spin.classList.remove('animate-spin');
+      document.getElementById('fanStatusSub').innerText = 'Status: Menunggu Data';
+      document.getElementById('btnFanSwitch').innerText = 'Nyalakan Kipas';
+      document.getElementById('btnFanSwitch').className = "px-5 py-2.5 rounded-2xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition shadow-sm";
+    }
+
+    function selectDevice(devId) {
+      if (activeDeviceId === devId) return;
+
+      if (client && client.connected) {
+        client.unsubscribe(`smart-purifier/${activeDeviceId}/status`);
+      }
+
+      activeDeviceId = devId;
+      localStorage.setItem('purifier_active_device', devId);
+      document.getElementById('activeDeviceLabel').innerText = devId;
+
+      resetDashboardUI();
+      renderDeviceList();
+
+      if (client && client.connected) {
+        client.subscribe(`smart-purifier/${activeDeviceId}/status`);
+      }
+    }
+
+    function removeDevice(devId, event) {
+      event.stopPropagation();
+      if (devices.length <= 1) {
+        alert("Minimal harus ada satu node alat dalam sistem.");
+        return;
+      }
+      devices = devices.filter(d => d.id !== devId);
+      localStorage.setItem('purifier_device_list', JSON.stringify(devices));
+
+      if (activeDeviceId === devId) {
+        selectDevice(devices[0].id);
+      } else {
+        renderDeviceList();
+      }
+    }
+
+    function renderDeviceList() {
+      const container = document.getElementById('deviceListContainer');
+      container.innerHTML = '';
+
+      devices.forEach(dev => {
+        const isSelected = (dev.id === activeDeviceId);
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-2xl cursor-pointer flex items-center justify-between transition ${
+          isSelected ? 'bg-emerald-50/80 border border-emerald-300' : 'bg-slate-50 border border-slate-200 hover:bg-slate-100'
+        }`;
+        card.onclick = () => selectDevice(dev.id);
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-emerald-500' : 'bg-slate-400'}"></span>
+            <div>
+              <div class="text-sm font-bold text-slate-800">${dev.name}</div>
+              <div class="text-[11px] text-slate-500 font-mono">Topik: smart-purifier/${dev.id}/...</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <i data-feather="${isSelected ? 'check-circle' : 'circle'}" class="w-4 h-4 ${isSelected ? 'text-emerald-600' : 'text-slate-300'}"></i>
+            <button onclick="removeDevice('${dev.id}', event)" class="text-slate-300 hover:text-rose-500 p-1" title="Hapus node">
+              <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+
+      feather.replace();
+    }
+
+    function handleAddNewDevice() {
+      const nameInput = document.getElementById('newDeviceName');
+      const idInput = document.getElementById('newDeviceId');
+
+      const name = nameInput.value.trim() || 'Node Baru';
+      const rawId = idInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
+      if (!rawId) {
+        alert("Masukkan Device ID topik yang valid!");
+        return;
+      }
+
+      if (devices.some(d => d.id === rawId)) {
+        alert("Device ID sudah ada dalam daftar!");
+        return;
+      }
+
+      devices.push({ id: rawId, name: name });
+      localStorage.setItem('purifier_device_list', JSON.stringify(devices));
+
+      nameInput.value = '';
+      idInput.value = '';
+
+      renderDeviceList();
+      selectDevice(rawId);
+    }
+
+    // KONEKSI MQTT KE HIVEMQ PUBLIC
+    function initMqtt() {
+      if (client) {
+        try { client.end(true); } catch(e){}
+      }
+
+      const badge = document.getElementById('connBadge');
+      const connText = document.getElementById('connText');
+      badge.className = "flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 shadow-sm cursor-pointer";
+      connText.innerText = "Menghubungkan...";
+
+      const cleanHost = mqttHost.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '').replace(/\/.*\$/, '');
+      const wsUrl = `wss://${cleanHost}:${mqttPort}/mqtt`;
+
+      const options = {
+        clientId: 'DashboardPub_' + Math.random().toString(16).substring(2, 10),
+        clean: true,
+        connectTimeout: 8000,
+        reconnectPeriod: 4000
+      };
+
+      try {
+        client = mqtt.connect(wsUrl, options);
+
+        client.on('connect', () => {
+          badge.className = "flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm cursor-pointer";
+          connText.innerText = "Terhubung";
+
+          client.subscribe(`smart-purifier/${activeDeviceId}/status`);
+        });
+
+        client.on('message', (topic, payload) => {
+          try {
+            const data = JSON.parse(payload.toString());
+            if (topic === `smart-purifier/${activeDeviceId}/status`) {
+              renderData(data);
+            }
+            appendLog(topic, data);
+          } catch(err) {
+            console.error("Payload error:", err);
+          }
+        });
+
+        client.on('error', (err) => {
+          console.error("MQTT Error:", err);
+          badge.className = "flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-200 shadow-sm cursor-pointer";
+          connText.innerText = "Terputus";
+        });
+
+        client.on('close', () => {
+          badge.className = "flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-200 shadow-sm cursor-pointer";
+          connText.innerText = "Terputus";
+        });
+      } catch (e) {
+        console.error("Init connection error:", e);
+      }
+    }
+
+    function saveAndReconnectMqtt() {
+      mqttHost = document.getElementById('cfgHost').value.trim();
+      mqttPort = document.getElementById('cfgPort').value.trim();
+
+      localStorage.setItem('mqtt_host', mqttHost);
+      localStorage.setItem('mqtt_port', mqttPort);
+
+      setTab('dashboard');
+      initMqtt();
+    }
+
+    function renderData(data) {
+      if (data.temp !== undefined) {
+        document.getElementById('dispTemp').innerText = data.temp.toFixed(1) + ' °C';
+        document.getElementById('dispTempBig').innerText = data.temp.toFixed(1) + '°C';
+        document.getElementById('climateStatus').innerText = 'Suhu Ruangan Terpantau';
+      }
+      if (data.hum !== undefined) {
+        document.getElementById('dispHum').innerText = data.hum.toFixed(1) + ' %';
+        document.getElementById('dispHumSub').innerText = data.hum.toFixed(1) + '%';
+      }
+      if (data.air_quality !== undefined) {
+        const val = data.air_quality;
+        document.getElementById('dispRaw').innerText = val;
+        document.getElementById('dispAqiVal').innerText = val;
+
+        const aqiCard = document.getElementById('aqiCard');
+        const aqiTag = document.getElementById('dispAqiTag');
+        const aqiAdvice = document.getElementById('dispAqiAdvice');
+        const aqiProgress = document.getElementById('aqiProgress');
+
+        const thMod = parseInt(document.getElementById('inputThMod').value) || 600;
+        const thBad = parseInt(document.getElementById('inputThBad').value) || 1200;
+
+        const pct = Math.min(Math.max((val / (thBad * 1.5)) * 100, 8), 100);
+        aqiProgress.style.width = pct + '%';
+
+        if (val < thMod) {
+          aqiCard.className = "bg-emerald-600 text-white rounded-3xl p-6 shadow-md shadow-emerald-600/20 flex flex-col justify-between transition-colors";
+          aqiTag.innerText = "Baik / Bersih";
+          aqiAdvice.innerText = "Kondisi udara segar dan aman untuk pernapasan.";
+        } else if (val < thBad) {
+          aqiCard.className = "bg-amber-500 text-white rounded-3xl p-6 shadow-md shadow-amber-500/20 flex flex-col justify-between transition-colors";
+          aqiTag.innerText = "Sedang";
+          aqiAdvice.innerText = "Terdeteksi sedikit polutan/gas. Kipas menyala menyaring udara.";
+        } else {
+          aqiCard.className = "bg-rose-600 text-white rounded-3xl p-6 shadow-md shadow-rose-600/20 flex flex-col justify-between transition-colors";
+          aqiTag.innerText = "Buruk";
+          aqiAdvice.innerText = "Konsentrasi polusi tinggi. Kipas beroperasi membuang udara kotor.";
+        }
+      }
+
+      if (data.mode) {
+        autoMode = (data.mode === 'auto');
+        document.getElementById('dispMode').innerText = data.mode.toUpperCase();
+        document.getElementById('btnToggleMode').innerText = autoMode ? "Ubah ke Manual" : "Ubah ke Auto";
+      }
+
+      if (data.fan_state !== undefined) {
+        fanActive = data.fan_state;
+        const spin = document.getElementById('fanSpinIcon');
+        const fanText = document.getElementById('fanStatusSub');
+        const btnFan = document.getElementById('btnFanSwitch');
+
+        if (fanActive) {
+          spin.classList.add('animate-spin');
+          fanText.innerText = "Status: Kipas Aktif Berputar";
+          btnFan.innerText = "Matikan Kipas";
+          btnFan.className = "px-5 py-2.5 rounded-2xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition shadow-sm";
+        } else {
+          spin.classList.remove('animate-spin');
+          fanText.innerText = "Status: Kipas Siaga / Mati";
+          btnFan.innerText = "Nyalakan Kipas";
+          btnFan.className = "px-5 py-2.5 rounded-2xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition shadow-sm";
+        }
+      }
+    }
+
+    function toggleModeOperation() {
+      if (!client || !client.connected) return alert("Broker MQTT belum terhubung!");
+      const targetMode = autoMode ? "manual" : "auto";
+      const payload = JSON.stringify({ mode: targetMode });
+      client.publish(`smart-purifier/${activeDeviceId}/control`, payload);
+    }
+
+    function toggleFanRelay() {
+      if (!client || !client.connected) return alert("Broker MQTT belum terhubung!");
+      const payload = JSON.stringify({ mode: "manual", fan: !fanActive });
+      client.publish(`smart-purifier/${activeDeviceId}/control`, payload);
+    }
+
+    function sendCalibrationPayload() {
+      if (!client || !client.connected) return alert("Broker MQTT belum terhubung!");
+      const offset = parseInt(document.getElementById('inputOffset').value) || 0;
+      const th_mod = parseInt(document.getElementById('inputThMod').value) || 600;
+      const th_bad = parseInt(document.getElementById('inputThBad').value) || 1200;
+
+      const payload = JSON.stringify({ offset, th_mod, th_bad });
+      client.publish(`smart-purifier/${activeDeviceId}/config`, payload);
+      alert(`Kalibrasi terkirim ke topik: smart-purifier/${activeDeviceId}/config`);
+    }
+
+    function appendLog(topic, data) {
+      const tbody = document.getElementById('logTableBody');
+      const timeStr = new Date().toLocaleTimeString('id-ID');
+      
+      if (tbody.children.length === 1 && tbody.children[0].innerText.includes('Belum ada')) {
+        tbody.innerHTML = '';
+      }
+
+      const row = document.createElement('tr');
+      row.className = "hover:bg-slate-50";
+      row.innerHTML = `
+        <td class="py-2.5 px-2 font-mono">${timeStr}</td>
+        <td class="py-2.5 px-2 font-mono text-emerald-600">${topic}</td>
+        <td class="py-2.5 px-2">${data.temp !== undefined ? data.temp.toFixed(1) + '°C' : '--'}</td>
+        <td class="py-2.5 px-2">${data.hum !== undefined ? data.hum.toFixed(1) + '%' : '--'}</td>
+        <td class="py-2.5 px-2 font-bold">${data.air_quality !== undefined ? data.air_quality : '--'}</td>
+        <td class="py-2.5 px-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${data.fan_state ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${data.fan_state ? 'ON' : 'OFF'}</span></td>
+        <td class="py-2.5 px-2 uppercase text-[10px] font-semibold">${data.mode || 'AUTO'}</td>
+      `;
+      tbody.prepend(row);
+
+      if (tbody.children.length > 25) {
+        tbody.removeChild(tbody.lastChild);
+      }
+    }
+
+    function clearLogs() {
+      document.getElementById('logTableBody').innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-400">Log telah dibersihkan.</td></tr>';
+    }
+
+    document.getElementById('activeDeviceLabel').innerText = activeDeviceId;
+    resetDashboardUI();
+    renderDeviceList();
+    initMqtt();
+  </script>
+</body>
+</html>
